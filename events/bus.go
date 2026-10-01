@@ -5,14 +5,19 @@ import (
  "errors"
  "reflect"
  "sync"
+ "time"
+ "github.com/el211/GoModulith/observability"
 )
 
 // Handler receives a published event.
 type Handler func(context.Context,any)error
 type subscriber struct { id uint64; fn Handler }
 // Bus dispatches events by their concrete Go type.
-type Bus struct { mu sync.RWMutex; next uint64; handlers map[reflect.Type][]subscriber }
+type Bus struct { mu sync.RWMutex; next uint64; handlers map[reflect.Type][]subscriber; observer observability.Observer }
 func New()*Bus{return &Bus{handlers:make(map[reflect.Type][]subscriber)}}
+
+// SetObserver attaches optional event-publishing instrumentation.
+func(b *Bus)SetObserver(observer observability.Observer){b.mu.Lock();b.observer=observer;b.mu.Unlock()}
 
 // Subscribe registers a handler for the concrete type represented by prototype.
 // Its returned function safely removes only this registration.
@@ -27,7 +32,9 @@ func(b *Bus)Subscribe(prototype any,h Handler)(func(),error){
 // Publish synchronously dispatches all handlers and joins their errors.
 func(b *Bus)Publish(ctx context.Context,event any)error{
  if event==nil{return errors.New("events: nil event")}
- b.mu.RLock();listeners:=append([]subscriber(nil),b.handlers[reflect.TypeOf(event)]...);b.mu.RUnlock()
+ begin:=time.Now()
+ b.mu.RLock();listeners:=append([]subscriber(nil),b.handlers[reflect.TypeOf(event)]...);observer:=b.observer;b.mu.RUnlock()
+ defer func(){if observer!=nil{observer.EventPublished(ctx,reflect.TypeOf(event).String(),time.Since(begin),nil)}}()
  var errs []error
  for _,s:=range listeners{if err:=ctx.Err();err!=nil{return errors.Join(append(errs,err)...)};if err:=s.fn(ctx,event);err!=nil{errs=append(errs,err)}}
  return errors.Join(errs...)
