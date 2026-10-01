@@ -11,6 +11,8 @@ import (
  "fmt"
  "sort"
  "sync"
+ "time"
+ "github.com/el211/GoModulith/observability"
 )
 
 // Module is an independently owned application capability.
@@ -28,6 +30,7 @@ type App struct {
  modules map[string]Module
  started []string
  running bool
+ observer observability.Observer
 }
 
 // Option customizes an App.
@@ -35,6 +38,9 @@ type Option func(*App)
 
 // WithName assigns a descriptive application name.
 func WithName(name string) Option { return func(a *App) { a.name = name } }
+
+// WithObserver instruments lifecycle transitions without requiring an SDK.
+func WithObserver(observer observability.Observer) Option {return func(a *App){a.observer=observer}}
 
 // New creates an empty application.
 func New(options ...Option) *App {
@@ -109,7 +115,10 @@ func (a *App) Run(ctx context.Context) error {
  started:=make([]string,0,len(names))
  for _,n:=range names {
   if err:=ctx.Err();err!=nil { a.rollback(ctx,started);return err }
-  if err:=a.modules[n].Start(ctx);err!=nil { a.rollback(context.WithoutCancel(ctx),started);return fmt.Errorf("modulith: start %s: %w",n,err) }
+  begin:=time.Now()
+  err:=a.modules[n].Start(ctx)
+  if a.observer!=nil {a.observer.ModuleStarted(ctx,n,time.Since(begin),err)}
+  if err!=nil { a.rollback(context.WithoutCancel(ctx),started);return fmt.Errorf("modulith: start %s: %w",n,err) }
   started=append(started,n)
  }
  a.started=started;a.running=true;return nil
@@ -123,7 +132,7 @@ func (a *App) Shutdown(ctx context.Context)error{
  a.mu.Lock();defer a.mu.Unlock()
  if !a.running{return nil}
  var errs []error
- for i:=len(a.started)-1;i>=0;i-- { n:=a.started[i];if err:=a.modules[n].Stop(ctx);err!=nil{errs=append(errs,fmt.Errorf("%s: %w",n,err))} }
+ for i:=len(a.started)-1;i>=0;i-- { n:=a.started[i];begin:=time.Now();err:=a.modules[n].Stop(ctx);if a.observer!=nil{a.observer.ModuleStopped(ctx,n,time.Since(begin),err)};if err!=nil{errs=append(errs,fmt.Errorf("%s: %w",n,err))} }
  a.running=false;a.started=nil
  return errors.Join(errs...)
 }
