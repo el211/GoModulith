@@ -34,6 +34,13 @@ func New() module.Definition {
     return module.Definition{
         ID:       "orders",
         Requires: []string{"users"},
+        Metadata: module.Info{
+            ImportPath: "example.com/shop/modules/orders",
+            Description: "Order processing and public order contracts",
+            Version: "0.1.0",
+            Owners: []string{"commerce-team"},
+            Exports: []string{"OrderService", "OrderPlaced"},
+        },
         OnStart: func(ctx context.Context) error { return nil },
         OnStop:  func(ctx context.Context) error { return nil },
     }
