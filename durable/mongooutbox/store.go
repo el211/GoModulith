@@ -67,3 +67,22 @@ func(s Store)Dead(ctx context.Context,id,worker string,attempt int,reason string
  return s.update(ctx,id,worker,bson.M{"attempts":attempt,"last_error":reason,"state":"dead","owner":"","lease_until":time.Unix(0,0).UTC()})
 }
 var _ reliable.Store=Store{}
+
+// DeadLetters returns a bounded list of exhausted events for inspection.
+func(s Store)DeadLetters(ctx context.Context,limit int)([]reliable.DeadLetter,error){
+ if err:=s.check();err!=nil{return nil,err};if limit<=0{return nil,nil}
+ cur,err:=s.Collection.Find(ctx,bson.M{"state":"dead"},options.Find().SetSort(bson.D{{Key:"created_at",Value:1},{Key:"_id",Value:1}}).SetLimit(int64(limit)))
+ if err!=nil{return nil,err};defer cur.Close(ctx)
+ out:=[]reliable.DeadLetter{}
+ for cur.Next(ctx){var d document;if err:=cur.Decode(&d);err!=nil{return nil,err}
+  out=append(out,reliable.DeadLetter{Event:durable.Event{ID:d.ID,Topic:d.Topic,Payload:d.Payload,CreatedAt:d.CreatedAt},Attempts:d.Attempts,Reason:d.LastError})
+ }
+ return out,cur.Err()
+}
+// RequeueDead resets an exhausted event for a new delivery attempt.
+func(s Store)RequeueDead(ctx context.Context,id string)error{
+ if err:=s.check();err!=nil{return err}
+ res,err:=s.Collection.UpdateOne(ctx,bson.M{"_id":id,"state":"dead"},bson.M{"$set":bson.M{"state":"pending","attempts":0,"last_error":"","owner":"","lease_until":time.Unix(0,0).UTC(),"available_at":time.Now().UTC()}})
+ if err!=nil{return err};if res.MatchedCount!=1{return ErrLease};return nil
+}
+var _ reliable.DeadLetterStore=Store{}

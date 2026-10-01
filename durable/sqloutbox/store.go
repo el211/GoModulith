@@ -79,3 +79,26 @@ func(s Store)Dead(ctx context.Context,id,worker string,attempt int,reason string
  return s.change(ctx,q,attempt,reason,id,worker)
 }
 var _ reliable.Store=Store{}
+
+// DeadLetters returns a bounded snapshot of exhausted messages.
+func(s Store)DeadLetters(ctx context.Context,limit int)([]reliable.DeadLetter,error){
+ if err:=s.check();err!=nil{return nil,err}
+ if limit<=0{return nil,nil}
+ q:="SELECT id,topic,payload,created_at,attempts,last_error FROM gomodulith_outbox WHERE state='dead' ORDER BY created_at,id LIMIT "+s.bind(1)
+ rows,err:=s.DB.QueryContext(ctx,q,limit);if err!=nil{return nil,err};defer rows.Close()
+ result:=[]reliable.DeadLetter{}
+ for rows.Next(){var e reliable.DeadLetter;var ts int64
+  if err:=rows.Scan(&e.Event.ID,&e.Event.Topic,&e.Event.Payload,&ts,&e.Attempts,&e.Reason);err!=nil{return nil,err}
+  e.Event.CreatedAt=time.UnixMilli(ts).UTC();result=append(result,e)
+ }
+ return result,rows.Err()
+}
+// RequeueDead clears delivery history and makes an exhausted event eligible
+// for a new claim. Only explicitly dead events may be requeued.
+func(s Store)RequeueDead(ctx context.Context,id string)error{
+ if err:=s.check();err!=nil{return err}
+ q:="UPDATE gomodulith_outbox SET state='pending', attempts=0, last_error='', owner='', lease_until=0, available_at="+s.bind(1)+" WHERE id="+s.bind(2)+" AND state='dead'"
+ res,err:=s.DB.ExecContext(ctx,q,time.Now().UTC().UnixMilli(),id);if err!=nil{return err}
+ n,err:=res.RowsAffected();if err!=nil{return err};if n!=1{return ErrLease};return nil
+}
+var _ reliable.DeadLetterStore=Store{}

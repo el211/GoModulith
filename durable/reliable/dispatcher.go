@@ -69,3 +69,14 @@ func(d Dispatcher)Drain(ctx context.Context)(int,error){
  }
  return done,errors.Join(errs...)
 }
+
+// DeadLetter represents an exhausted event retained for administrative review.
+type DeadLetter struct { Event durable.Event; Attempts int; Reason string }
+
+// DeadLetterStore is an optional administrative extension implemented by the
+// SQL and MongoDB adapters. RequeueDead clears errors and attempts but does not
+// guarantee exactly-once processing.
+type DeadLetterStore interface {
+ DeadLetters(context.Context,int)([]DeadLetter,error)
+ RequeueDead(context.Context,string)error
+}
