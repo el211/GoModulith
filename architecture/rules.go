@@ -42,3 +42,28 @@ func VerifyRules(r Report,rules ...Rule)error{
  for _,rule:=range rules{r.Violations=append(r.Violations,rule.Check(r)...)}
  return r.Verify()
 }
+
+ 
+// MaxDependencies limits direct module-to-module imports (not transitive imports).
+type MaxDependencies struct { Module string; Limit int }
+func(rule MaxDependencies)Check(r Report)[]Violation{
+ if rule.Limit<0{return []Violation{{From:rule.Module,Reason:"negative dependency limit"}}}
+ var out []Violation
+ for _,name:=range r.Modules{
+  if rule.Module!=""&&rule.Module!=name{continue}
+  if len(r.Dependencies[name])>rule.Limit{
+   out=append(out,Violation{From:name,Reason:fmt.Sprintf("module has %d direct dependencies; maximum is %d",len(r.Dependencies[name]),rule.Limit)})
+  }
+ }
+ return out
+}
+// RequiredDependency declares that one module must directly import another.
+// An unknown source or target is also reported as a violation.
+type RequiredDependency struct { From,To string }
+func(rule RequiredDependency)Check(r Report)[]Violation{
+ knownFrom,knownTo:=false,false
+ for _,name:=range r.Modules {if name==rule.From{knownFrom=true};if name==rule.To{knownTo=true}}
+ if !knownFrom||!knownTo{return []Violation{{From:rule.From,To:rule.To,Reason:"required dependency references an unknown module"}}}
+ for _,dep:=range r.Dependencies[rule.From] {if dep==rule.To{return nil}}
+ return []Violation{{From:rule.From,To:rule.To,Reason:"required direct dependency is missing"}}
+}

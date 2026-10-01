@@ -114,7 +114,16 @@ gomodulith docs -root . -dir modules > ARCHITECTURE.md
 `inspect` emits JSON, `graph` emits Mermaid, and `docs` emits Markdown with
 a Mermaid diagram. CLI exits nonzero for validation failures.
 
-## Production integrations\n\n- `durable/sqloutbox`: call `Schema(sqloutbox.SQLite)` or `Schema(sqloutbox.Postgres)` in migrations; use `EnqueueTx(ctx, tx, event)` inside the same database transaction as business writes. Install and register your preferred database/sql driver yourself.\n- `durable/mongooutbox`: run `EnsureIndexes`; use `EnqueueSession(sessionCtx, event)` in a MongoDB transaction for business atomicity. Requires replica set or sharded topology for transactions.\n- `durable/reliable`: dispatch via claim leases, exponential retries and a persistent dead-letter state; consumers must deduplicate event IDs.\n- `integrations/gin`, `integrations/fiber`, `integrations/echo`, `integrations/grpc`: optional context middleware and interceptors.\n- `observability/otel`: optional metrics-backed Observer. Attach an Observer from your application instrumentation layer.\n- `architecture.AnalyzeIncremental`: content-addressed source-file import cache. Additional rules: `NoDependency`, `LayerRule`, `NamingRule`; verify using `VerifyRules`.\n\n## Package information
+## Production integrations
+
+- `durable/sqloutbox`: call `Schema(sqloutbox.SQLite)` or `Schema(sqloutbox.Postgres)` in migrations; use `EnqueueTx(ctx, tx, event)` inside the same database transaction as business writes. Install and register your preferred database/sql driver yourself.
+- `durable/mongooutbox`: run `EnsureIndexes`; use `EnqueueSession(sessionCtx, event)` in a MongoDB transaction for business atomicity. Requires replica set or sharded topology for transactions.
+- `durable/reliable`: dispatch via claim leases, exponential retries and a persistent dead-letter state; consumers must deduplicate event IDs. Each dispatcher drain uses a fresh claim-owner token to prevent a stale drain from acknowledging a later claim by the same worker.
+- `integrations/gin`, `integrations/fiber`, `integrations/echo`, `integrations/grpc`: optional context middleware and interceptors.
+- `observability/otel`: optional metrics-backed Observer. Attach an Observer from your application instrumentation layer.
+- `architecture.AnalyzeIncremental`: content-addressed source-file import cache. Additional rules: `NoDependency`, `LayerRule`, `NamingRule`, `MaxDependencies`, `RequiredDependency`; verify using `VerifyRules`.
+
+## Package information
 
 | Package | Responsibility |
 |---|---|
@@ -122,7 +131,12 @@ a Mermaid diagram. CLI exits nonzero for validation failures.
 | `module` | Lightweight function-backed module definition |
 | `events` | Concurrent-safe synchronous/asynchronous typed event dispatch |
 | `durable` | Event envelope, outbox ports and at-least-once dispatcher |
-| `durable/memory` | In-memory Store for development/testing (non-durable) |\n| `durable/reliable` | Leases, bounded delivery, retry/backoff and dead letters |\n| `durable/sqloutbox` | Transactional database/sql outbox for SQLite/PostgreSQL |\n| `durable/mongooutbox` | MongoDB session-bound enqueue and atomic lease claim |\n| `integrations/gin`, `fiber`, `echo`, `grpc` | Optional framework middleware/interceptors |\n| `observability/otel` | OpenTelemetry metrics Observer |
+| `durable/memory` | In-memory Store for development/testing (non-durable) |
+| `durable/reliable` | Leases, bounded delivery, retry/backoff and dead letters |
+| `durable/sqloutbox` | Transactional database/sql outbox for SQLite/PostgreSQL |
+| `durable/mongooutbox` | MongoDB session-bound enqueue and atomic lease claim |
+| `integrations/gin`, `fiber`, `echo`, `grpc` | Optional framework middleware/interceptors |
+| `observability/otel` | OpenTelemetry metrics Observer |
 | `architecture` | Source import graph, boundary/allowlist/cycle verification |
 | `documenter` | Mermaid/Markdown architecture export |
 | `observability` | Optional instrumentation hooks |
@@ -133,6 +147,10 @@ a Mermaid diagram. CLI exits nonzero for validation failures.
 Every library package contains package-level GoDoc in its root file or
 `doc.go`; public APIs carry GoDoc comments. The CLI and example are
 `package main` because they are executables.
+
+### Transactional outbox usage
+
+Call `sqloutbox.Schema(dialect)` in a migration, then invoke `EnqueueTx` with the *same* `*sql.Tx` as the business update. Do not use standalone `Enqueue` when business-write atomicity is required. For MongoDB, invoke `EnqueueSession` within the `mongo.SessionContext` of a running transaction; MongoDB multi-document transactions require a supported replica set or sharded deployment. Outbox delivery is at least once; use event IDs for downstream idempotency. Lease duration must exceed publication time or be renewed externally to avoid redelivery during a long publish.
 
 ## Verification
 
@@ -152,11 +170,11 @@ go run ./examples/shop
 - [x] Dependency allowlists, CLI, JSON and Mermaid/Markdown documentation
 - [x] Outbox interfaces and volatile reference store
 - [x] Package GoDoc, tests and CI workflow
-- [ ] SQL transactional outbox (SQLite / PostgreSQL)
-- [ ] MongoDB adapter with transaction-bound enqueue
-- [ ] Framework integrations: Gin, Fiber, Echo, gRPC
-- [ ] OpenTelemetry adapter
-- [ ] Event retry/backoff, leases, dead-letter handling
-- [ ] Incremental package graph analysis and richer architecture rules
+- [x] SQL transactional outbox (SQLite / PostgreSQL)
+- [x] MongoDB adapter with transaction-bound enqueue
+- [x] Framework integrations: Gin, Fiber, Echo, gRPC
+- [x] OpenTelemetry adapter
+- [x] Event retry/backoff, leases, dead-letter handling
+- [x] Incremental package graph analysis and richer architecture rules
 
 MIT licensed.
