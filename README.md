@@ -6,10 +6,9 @@ GoModulith takes inspiration from Spring Modulith while using idiomatic Go:
 explicit module interfaces, deterministic lifecycle management, event-driven
 collaboration, static import-boundary analysis and generated architecture docs.
 
-> Early development (v0.1.0). The core, event bus, volatile outbox, architecture
-> analyzer and CLI are implemented. Database-specific outboxes, distributed
-> brokers, framework adapters and OpenTelemetry bridges are extension points /
-> planned work, **not bundled implementations**.
+> Active development. Core lifecycle, typed events, SQL/Mongo outbox stores, retryable dispatch,
+> optional HTTP/gRPC integrations and OTel metrics are available. Integrations must be validated
+> against your application's driver/framework versions before production deployment.
 
 ## Install
 
@@ -115,7 +114,7 @@ gomodulith docs -root . -dir modules > ARCHITECTURE.md
 `inspect` emits JSON, `graph` emits Mermaid, and `docs` emits Markdown with
 a Mermaid diagram. CLI exits nonzero for validation failures.
 
-## Package information
+## Production integrations\n\n- `durable/sqloutbox`: call `Schema(sqloutbox.SQLite)` or `Schema(sqloutbox.Postgres)` in migrations; use `EnqueueTx(ctx, tx, event)` inside the same database transaction as business writes. Install and register your preferred database/sql driver yourself.\n- `durable/mongooutbox`: run `EnsureIndexes`; use `EnqueueSession(sessionCtx, event)` in a MongoDB transaction for business atomicity. Requires replica set or sharded topology for transactions.\n- `durable/reliable`: dispatch via claim leases, exponential retries and a persistent dead-letter state; consumers must deduplicate event IDs.\n- `integrations/gin`, `integrations/fiber`, `integrations/echo`, `integrations/grpc`: optional context middleware and interceptors.\n- `observability/otel`: optional metrics-backed Observer. Attach an Observer from your application instrumentation layer.\n- `architecture.AnalyzeIncremental`: content-addressed source-file import cache. Additional rules: `NoDependency`, `LayerRule`, `NamingRule`; verify using `VerifyRules`.\n\n## Package information
 
 | Package | Responsibility |
 |---|---|
@@ -123,7 +122,7 @@ a Mermaid diagram. CLI exits nonzero for validation failures.
 | `module` | Lightweight function-backed module definition |
 | `events` | Concurrent-safe synchronous/asynchronous typed event dispatch |
 | `durable` | Event envelope, outbox ports and at-least-once dispatcher |
-| `durable/memory` | In-memory Store for development/testing (non-durable) |
+| `durable/memory` | In-memory Store for development/testing (non-durable) |\n| `durable/reliable` | Leases, bounded delivery, retry/backoff and dead letters |\n| `durable/sqloutbox` | Transactional database/sql outbox for SQLite/PostgreSQL |\n| `durable/mongooutbox` | MongoDB session-bound enqueue and atomic lease claim |\n| `integrations/gin`, `fiber`, `echo`, `grpc` | Optional framework middleware/interceptors |\n| `observability/otel` | OpenTelemetry metrics Observer |
 | `architecture` | Source import graph, boundary/allowlist/cycle verification |
 | `documenter` | Mermaid/Markdown architecture export |
 | `observability` | Optional instrumentation hooks |
