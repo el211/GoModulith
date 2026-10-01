@@ -2,6 +2,8 @@ package reliable
 
 import (
  "context"
+ "crypto/rand"
+ "encoding/hex"
  "errors"
  "fmt"
  "math"
@@ -50,19 +52,24 @@ type Dispatcher struct{Store Store;Publisher Publisher;WorkerID string;Policy Po
 func(d Dispatcher)Drain(ctx context.Context)(int,error){
  if d.Store==nil||d.Publisher==nil||d.WorkerID==""{return 0,errors.New("reliable: store, publisher and worker ID are required")}
  p:=d.Policy.normalize();now:=time.Now;if d.Now!=nil{now=d.Now}
- jobs,err:=d.Store.Claim(ctx,d.WorkerID,now().UTC(),p.Lease,p.Batch);if err!=nil{return 0,err}
+ // Use a unique owner for each drain. A stalled drain must not be allowed to
+ // acknowledge a subsequent claim made by another drain with the same WorkerID.
+ var nonce [16]byte
+ if _,err:=rand.Read(nonce[:]);err!=nil{return 0,fmt.Errorf("reliable: claim owner: %w",err)}
+ owner:=d.WorkerID+":"+hex.EncodeToString(nonce[:])
+ jobs,err:=d.Store.Claim(ctx,owner,now().UTC(),p.Lease,p.Batch);if err!=nil{return 0,err}
  done:=0;var errs []error
  for _,job:=range jobs{
   if err:=ctx.Err();err!=nil{return done,errors.Join(append(errs,err)...)}
   attempt:=job.Attempts+1
   pubErr:=d.Publisher.PublishEvent(ctx,job.Event)
   if pubErr==nil{
-   if err:=d.Store.Ack(ctx,job.ID,d.WorkerID);err!=nil{errs=append(errs,fmt.Errorf("ack %s: %w",job.ID,err))}else{done++}
+   if err:=d.Store.Ack(ctx,job.ID,owner);err!=nil{errs=append(errs,fmt.Errorf("ack %s: %w",job.ID,err))}else{done++}
    continue
   }
   var stateErr error
-  if attempt>=p.MaxAttempts{stateErr=d.Store.Dead(ctx,job.ID,d.WorkerID,attempt,pubErr.Error())}else{
-   stateErr=d.Store.Retry(ctx,job.ID,d.WorkerID,attempt,now().Add(p.Delay(attempt)),pubErr.Error())
+  if attempt>=p.MaxAttempts{stateErr=d.Store.Dead(ctx,job.ID,owner,attempt,pubErr.Error())}else{
+   stateErr=d.Store.Retry(ctx,job.ID,owner,attempt,now().Add(p.Delay(attempt)),pubErr.Error())
   }
   errs=append(errs,fmt.Errorf("publish %s: %w",job.ID,pubErr))
   if stateErr!=nil{errs=append(errs,fmt.Errorf("record %s: %w",job.ID,stateErr))}
