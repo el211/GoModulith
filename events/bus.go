@@ -30,11 +30,11 @@ func(b *Bus)Subscribe(prototype any,h Handler)(func(),error){
 }
 
 // Publish synchronously dispatches all handlers and joins their errors.
-func(b *Bus)Publish(ctx context.Context,event any)error{
+func(b *Bus)Publish(ctx context.Context,event any)(publishErr error){
  if event==nil{return errors.New("events: nil event")}
  begin:=time.Now()
  b.mu.RLock();listeners:=append([]subscriber(nil),b.handlers[reflect.TypeOf(event)]...);observer:=b.observer;b.mu.RUnlock()
- defer func(){if observer!=nil{observer.EventPublished(ctx,reflect.TypeOf(event).String(),time.Since(begin),nil)}}()
+ defer func(){if observer!=nil{observer.EventPublished(ctx,reflect.TypeOf(event).String(),time.Since(begin),publishErr)}}()
  var errs []error
  for _,s:=range listeners{if err:=ctx.Err();err!=nil{return errors.Join(append(errs,err)...)};if err:=s.fn(ctx,event);err!=nil{errs=append(errs,err)}}
  return errors.Join(errs...)
