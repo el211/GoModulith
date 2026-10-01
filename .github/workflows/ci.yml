@@ -14,6 +14,13 @@ jobs:
           go-version-file: go.mod
           cache: false
       - run: go mod tidy
+      - run: |
+          echo '==GOMOD_BEGIN=='
+          cat go.mod
+          echo '==GOMOD_END=='
+          echo '==GOSUM_BEGIN=='
+          cat go.sum
+          echo '==GOSUM_END=='
       - run: gofmt -w .
       - run: go vet ./...
       - run: go test -race ./...
